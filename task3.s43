@@ -1,0 +1,51 @@
+#include <msp430xG46x.h>     ;define controlled include file
+
+;------------------------------------------------------------
+            NAME     MAIN
+            PUBLIC   MAIN
+            EXTERN   term_1,term_2,term_4,term_8
+            
+;-----------------------------------------------------------
+
+SetupP1     bic.b  #0x0f,P1DIR
+SetupP7     bis.b  #0x01,P7DIR
+            bic.b  #0x01,P7OUT
+
+            RSEG   CSTACK
+            RSEG   CODE
+            ORG    1100h           
+;-------------------------------------------------------------------------------
+;           Routine
+;-------------------------------------------------------------------------------   
+MAIN        MOV   #SFE(CSTACK),SP         ; mov #0x2100,SP
+            CLR    R4                         ; now we will check the term we are in.
+            mov.b  P1IN,R4                   ; mov the swiches position to R4 
+            bic.b  #0xf0,R4                    ; clear the 4 left bit in R4 to be left only with the term
+            DEC    R4
+            JZ     mod_1
+            DEC    R4
+            JZ     mod_2
+            DECD   R4
+            JZ     mod_4
+            DECD   R4
+            DECD   R4
+            JZ     mod_8
+            JMP    MAIN
+ 
+ 
+ 
+mod_1       CALL   #term_1
+            JMP    MAIN
+mod_2       CALL   #term_2
+            JMP    MAIN
+mod_4       CALL   #term_4
+            JMP    MAIN
+mod_8       CALL   #term_8
+            JMP    MAIN
+
+;-------------------------------------------------------------------------------
+            COMMON  INTVEC                  ; Interrupt Vectors
+;-------------------------------------------------------------------------------
+            ORG     RESET_VECTOR            ; POR, ext. Reset
+            DW      MAIN
+            END

@@ -1,0 +1,78 @@
+#include <msp430xG46x.h>     ;define controlled include file
+
+;-------------------------------------------------------------------------------  
+
+            MODULE   task3roots
+            PUBLIC   term_1,term_2,term_4,term_8
+            RSEG     CODE
+;-------------------------------------------------------------------------------           
+;           Routine1
+
+term_1      bic.b  #0x01,P7OUT
+            CLR    R4                         ; now we will check the term we are in.
+            mov.b  P1IN,R4                   ; mov the swiches position to R4 
+            bic.b  #0xf0,R4                    ; clear the 4 left bit in R4 to be left only with the term
+            DEC    R4
+            JZ     term_1
+            RET
+;-------------------------------------------------------------------------------
+
+term_2      bis.b  #0x01,P7OUT
+            CALL   #Wait
+            bic.b  #0x01,P7OUT
+            CALL   #Wait
+            CALL   #Wait
+            CALL   #Wait
+            NOP
+            CLR    R4                         ; now we will check the term we are in.
+            mov.b  P1IN,R4                   ; mov the swiches position to R4 
+            bic.b  #0xf0,R4                    ; clear the 4 left bit in R4 to be left only with the term
+            DECD   R4
+            JZ     term_2
+            RET
+            
+;-------------------------------------------------------------------------------
+term_4      bis.b  #0x01,P7OUT
+            CALL   #Wait
+            CALL   #Wait
+            NOP
+            NOP
+            NOP
+            NOP
+            bic.b  #0x01,P7OUT
+            CALL   #Wait
+            CALL   #Wait
+            mov.b  P1IN,R4
+            bit.b  #0x04,R4
+            JNZ    term_4
+            RET
+            
+
+;-------------------------------------------------------------------------------            
+term_8      bis.b  #0x01,P7OUT
+            CLR    R4                         ; now we will check the term we are in.
+            mov.b  P1IN,R4                   ; mov the swiches position to R4 
+            bic.b  #0xf0,R4                    ; clear the 4 left bit in R4 to be left only with the term
+            DECD   R4
+            DECD   R4
+            DECD   R4
+            DECD   R4
+            JZ     term_8
+            RET
+            
+Wait        mov.w  #17,R15     
+L5          dec.w  R15                         ; Decrement R15
+            jnz    L5                            ; Delay over?, jump if not zero(if bit Z in SR isn't zero from the last command)  
+            NOP
+            RET
+            
+            
+            
+
+
+            
+;-------------------------------------------------------------------------------
+            COMMON  INTVEC                  ; Interrupt Vectors
+;-------------------------------------------------------------------------------
+            ORG     RESET_VECTOR            ; POR, ext. Reset
+            END
