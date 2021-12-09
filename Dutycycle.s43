@@ -18,9 +18,9 @@ SetupP7     bis.b  #0x01,P7DIR
 ;           Routine
 ;-------------------------------------------------------------------------------   
 MAIN        MOV   #SFE(CSTACK),SP         ; mov #0x2100,SP
-            CLR    R4                         ; now we will check the term we are in.
-            mov.b  P1IN,R4                   ; mov the swiches position to R4 
-            bic.b  #0xf0,R4                    ; clear the 4 left bit in R4 to be left only with the term
+            CLR    R4                     ; now we will check the term we are in.
+            mov.b  P1IN,R4                ; mov the swiches position to R4 
+            bic.b  #0xf0,R4               ; clear the 4 left bit in R4 to be left only with the term
             DEC    R4
             JZ     mod_1
             DEC    R4
