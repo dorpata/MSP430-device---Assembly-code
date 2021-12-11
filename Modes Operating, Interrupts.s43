@@ -1,0 +1,164 @@
+#include <msp430G2553.h>
+;-------------------------------------------------------------------------------        
+;-------------------------------------------------------------------------------  
+Debounce     MACRO      cycles
+             LOCAL      L
+             mov.w      cycles,R15     
+L            dec.w      R15                     
+             jnz        L
+             ENDM
+;-------------------------------------------------------------------------------
+             ORG        0x0200                  ; Begins a RAM segment
+;-------------------------------------------------------------------------------
+state        DW         0
+Pull         EQU        280                       ;wait of 0.8msec = (3op*280)/2^20, work for both pull-up and pull-down.
+
+
+;-------------------------------------------------------------------------------
+             RSEG       CSTACK                  ; Begins a relocatable segment name of CSTACK - Define stack segment
+;-------------------------------------------------------------------------------
+             RSEG       CODE                    ; Assemble to Flash memory -like void main in C
+;-----------------------------------------------------------------------------
+RESET        mov.w      #SFE(CSTACK),SP          ; Initialize stack pointer
+StopWDT      mov.w      #WDTPW+WDTHOLD,&WDTCTL    
+            
+
+
+SetupP1      bic.b      #0xff,P1SEL     
+             bis.b      #0x7f,P1DIR             ;  set 01111111 to output
+             bic.b      #0x80,P1DIR             ;  set 10000000 to input
+             bic.b      #0x80,P1IES             ;  set rising edge (push down)
+             bis.b      #0x80,P1IE              ;  eneble to 10000000
+             bic.b      #0x7f,P1OUT             ;  clear 01111111 LED's
+             bic.b      #0x80,P1IFG             ;  reset of interrupt flag
+             clr        R7                      ;  save the LED status from PB0,PB1
+             
+             
+SetupP2      bic.b      #0xff,P2SEL
+             bic.b      #0xc0,P2DIR             ;  set input to p2.7 and p2.6
+             bis.b      #0xc0,P2IES             ;  push-up - set to fallig edge
+             bis.b      #0xc0,P2IE              ;  enable
+             bic.b      #0xc0,P2IFG             ;  reset of interrupt flag  
+             
+GoToSleep    bis.w      #CPUOFF+GIE,SR
+;------------------------------------------------------------------------------------------ 
+;             Delay of 0.5sec Subroutine
+;------------------------------------------------------------------------------------------ 
+
+wait2        mov.w        #3,R11                  ;wait of 0.5sec
+L1           mov.w        #58253,R5
+L2           dec.w        R5 
+             jnz          L2
+             dec.w        R11 
+             jnz          L1
+             ret
+             
+             
+
+;------------------------------------------------------------------------------------------ 
+;             Delay of 0.5sec Subroutine
+;------------------------------------------------------------------------------------------ 
+
+wait1        mov.w        #3,R12                  ;wait of 0.5sec
+L3           mov.w        #58253,R4
+L4           dec.w        R4 
+             jnz          L4
+             dec.w        R12 
+             jnz          L3
+             ret
+             
+             
+
+;------------------------------------------------------------------------------------------ 
+;             Delay of 0.5sec Subroutine
+;------------------------------------------------------------------------------------------ 
+
+wait         mov.w        #3,R13                  ;wait of 0.5sec
+L5           mov.w        #58253,R15
+L6           dec.w        R15 
+             jnz          L6
+             dec.w        R13 
+             jnz          L5
+             ret
+             
+             
+;------------------------------------------------------------------------------------------ 
+;               PORT1 Interrupt Service Routine  of SW1=P1.7
+;------------------------------------------------------------------------------------------
+PORT1_ISR    Debounce     #Pull
+             bit.b        #0x80,P1IFG           ; check if P1.7 is pushed
+             jnz          P1_7
+             reti                               ; interrupt hapened from another source
+             
+P1_7         mov.b        P1OUT,R7
+             bic.b        #0x7f,P1OUT
+             mov.b        #1,P1OUT
+             call         #wait1
+loopR        setc
+             rlc.b        P1OUT
+             call         #wait1
+             cmp.b        #0x7F,P1OUT
+             jnz          loopR
+             bic.b        #0x7f,P1OUT
+             bic.b        #0x80,P1IFG
+             mov.b        R7,P1OUT
+             reti
+             
+
+;------------------------------------------------------------------------------------------ 
+;               PORT2 Interrupt Service Routine 
+;------------------------------------------------------------------------------------------
+PORT2_ISR    Debounce     #Pull
+             bit.b        #0x40,P2IFG             ;check if P2.6 is pushed
+             jnz          PB_0 
+             bit.b        #0x80,P2IFG             ;check if P2.7 is pushed
+             jnz          PB_1
+             reti                                 ; interrupt hapened from another source
+             
+PB_0         bic.b        #0xc0,P2IFG            // clear flags of the lowest priority and itself
+             bic.b        #0x80,P2IE             // disable the lowest priority interrupts
+             bis.w        #GIE,SR                // enable Global Enable Interrupt
+             
+             bic.b        #0x7f,P1OUT
+             MOV          #21,R10
+Subloop0     DEC          R10
+             JZ           finish
+             incd.b       P1OUT
+             call         #wait2
+             setz
+             jz           Subloop0
+finish       bic.b        #0x7f,P1OUT
+             bis.b        #0xc0,P2IE             // enable the lowest priority interrupts
+             bic.b        #0x40,P2IFG
+             reti
+             
+             
+             
+PB_1         bic.b        #0xc0,P2IFG            // clear flags of the lowest priority and itself
+             bic.b        #0x40,P2IE             // disable the lowest priority interrupts
+             bis.w        #GIE,SR                // enable Global Enable Interrupt
+             bic.b        #0x7f,P1OUT
+             mov.b        #1,P1OUT
+             call         #wait
+subloopRR    rla.b        P1OUT
+             call         #wait
+             cmp.b        #0x40,P1OUT
+             jnz           subloopRR  
+             bic.b        #0x7f,P1OUT
+             bis.b        #0xc0,P2IE             // enable the lowest priority interrupts
+             bic.b        #0x80,P2IFG
+             reti
+;------------------------------------------------------------------------------------------ 
+
+;-------------------------------------------------------------------------------------------------------------------------------------------            
+            COMMON        INTVEC                  ; Interrupt Vectors-Begins a common segment with name of INTVEC 
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            ORG           PORT2_VECTOR            ;PORT2 Interrupt Vector
+            DW            PORT2_ISR 
+            ORG           PORT1_VECTOR            ;PORT1 Interrupt Vector
+            DW            PORT1_ISR
+            ORG           RESET_VECTOR            ; MSP430 RESET Vector
+            DW            RESET                   
+            END
+            
+            
