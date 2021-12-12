@@ -1,0 +1,218 @@
+#include <msp430G2553.h>
+
+;------------------------------------------------------------------------------- 
+             MODULE   root5pre
+             PUBLIC   PB0, PB1, PB2, LCD_COUNT, TA_PWM, FRQcount, headline, AsciiLCD
+             RSEG     CODE
+;------------------------------------------------------------------------------- 
+Pull_3       EQU        1747                       ;wait of  5msec
+;------------------------------------------------------------------------------- 
+  
+Lcd_data     MACRO       char
+             Debounce    #Pull_3
+             mov.b       #0x00,P1OUT
+             bis.b       #0x40,P2OUT
+             mov.b       char,P1OUT 
+             bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT
+             bic.b       #0x40,P2OUT
+             ENDM
+
+;----------------------------------------------------------------------------------------------
+ 
+Debounce     MACRO      cycles
+             LOCAL      L
+             mov.w      cycles,R15     
+L            dec.w      R15                     
+             jnz        L
+             ENDM
+;----------------------------------------------------------------------------------------------
+Lcd_cmd      MACRO       command
+             Debounce    #Pull_3
+             mov.b       command,P1OUT
+             bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT
+             ENDM
+;------------------------------------------------------------------------------- 
+;            increce counting PB0
+;----------------------------------------------------------------------------------------------
+            
+PB0          mov          #48,R5                       ;for PB0 and PB2
+             mov          #48,R10                      ;for PB0 and PB2
+             mov          #48,R11                      ;for PB0 and PB2
+
+SetupC0_0    mov.w        #CCIE,TACCTL0                ; TACCR0 interrupt enabled
+             mov.w        #0xFFFF,TACCR0               ; 0.5 sec
+SetupTA_0    mov.w        #TASSEL_2+MC_1+ID_3,TACTL    ; SMCLF + UP MODE + divide 8
+             ret
+
+;----------------------------------------------------------------------------------------------
+;            increce counting on LCD    Lcd_cmd      #0x01        ; clear LCD
+;----------------------------------------------------------------------------------------------
+LCD_COUNT    Lcd_cmd      #0x01        ; clear LCD
+             clr          R9           ; count one sec  2x0.5     
+             Lcd_data     R11          ; 100  count
+             Lcd_cmd      #0x14        ; mov right
+             Lcd_data     R10          ; 10  count
+             Lcd_cmd      #0x14        ; mov right
+             Lcd_data     R5           ; 1  count
+             inc          R5
+             cmp          #58,R5        
+             jnz          cont  
+             mov          #48,R5        
+             inc          R10
+             cmp          #58,R10
+             jnz          cont
+             mov          #48,R5
+             mov          #48,R10
+             inc          R11
+             cmp          #58,R11
+             jnz          cont
+             mov          #48,R5
+             mov          #48,R10
+             mov          #48,R11
+cont         ret
+;----------------------------------------------------------------------------------------------
+;             1kHz PWM  single  PB1
+;----------------------------------------------------------------------------------------------
+PB1           
+SetupC0_1    mov.w        #131,TA1CCR0                     ; PWM Period 
+SetupC1      mov.w        #OUTMOD_7,TA1CCTL1               ; CCR1 reset/set
+             mov.w        #26,TA1CCR1                     ; CCR1 PWM Duty Cycle, start with 20%
+SetupTA_1    mov.w        #TASSEL_2+MC_1+ID_3+TAIE,TA1CTL  ; SMCLF + UP MODE + divide 8 = send interupt every 0.5 sec
+             ret
+             
+;----------------------------------------------------------------------------------------------            
+;             rising the PWM
+;----------------------------------------------------------------------------------------------
+TA_PWM      inc          R6                       ; Vector 5 - TA
+            cmp          #65535,R6                ; check if 5 sec
+            jnz          L                        ; NO?
+            add          #26,TA1CCR1              ; inc by 20% PWM
+            clr          R6                       ; start the cuont to 5 sec again
+            cmp          #130,TA1CCR1             ; did we end the ciklidit?
+            jnz          L                        ; NO?
+            mov          #26,TA1CCR1              ; start from the beginig everything
+L           ret                                   ; Return from overflow ISR
+;----------------------------------------------------------------------------------------------             
+;            Generator single PB2
+;----------------------------------------------------------------------------------------------
+PB2         mov          #48,R5                         ; setup FSM
+            mov          #48,R10
+            mov          #48,R11                                 
+            mov          #48,R12
+            mov          #48,R13       
+            
+SetupC      mov.w        #CCIE,TA0CCTL0                 ; TACCR0 interrupt enabled
+            mov.w        #0xFFFF,TA0CCR0                ; 0.5 sec
+SetupTA0_0  mov.w        #TASSEL_2+MC_1+ID_3,TA0CTL     ; SMCLF + UP MODE + divide 8
+
+SetupTA1_0  mov.w        #CCIE+CM_1+SCS+CAP+CCIS_0+CCI,TA1CCTL1    ; TA1CCR0 interrupt enabled
+            mov.w        #TASSEL_0+MC_2,TA1CTL                 ; OUTsource + continues
+            ret
+
+;----------------------------------------------------------------------------------------------             
+;            Generator single FRQ count
+;----------------------------------------------------------------------------------------------
+FRQcount     inc          R5            ; 1  
+             cmp          #58,R5        
+             jnz          conti  
+             mov          #48,R5        
+             inc          R10           ; 10
+             cmp          #58,R10
+             jnz          conti
+             mov          #48,R5
+             mov          #48,R10
+             inc          R11          ; 100
+             cmp          #58,R11
+             jnz          conti
+             mov          #48,R5
+             mov          #48,R10
+             mov          #48,R11
+             inc          R12         ; 1000
+             cmp          #58,R12
+             jnz          conti
+             mov          #48,R5
+             mov          #48,R10
+             mov          #48,R11
+             mov          #48,R12
+             inc          R13         ; 10,000
+conti        ret
+;----------------------------------------------------------------------------------------------
+;   for PB2 , show the headline fo the FRQ.
+;----------------------------------------------------------------------------------------------
+headline    Lcd_cmd     #0x01                
+            Lcd_data    #77
+            Lcd_cmd     #0x14
+            Lcd_data    #101
+            Lcd_cmd     #0x14
+            Lcd_data    #97
+            Lcd_cmd     #0x14
+            Lcd_data    #115
+            Lcd_cmd     #0x14
+            Lcd_data    #117
+            Lcd_cmd     #0x14
+            Lcd_data    #114
+            Lcd_cmd     #0x14
+            Lcd_data    #101
+            Lcd_cmd     #0x14
+            Lcd_data    #100
+            Lcd_cmd     #0x14
+            Lcd_cmd     #0x14
+            Lcd_data    #70
+            Lcd_cmd     #0x14
+            Lcd_data    #114
+            Lcd_cmd     #0x14
+            Lcd_data    #101
+            Lcd_cmd     #0x14
+            Lcd_data    #113
+            Lcd_cmd     #0x14
+            Lcd_data    #117
+            Lcd_cmd     #0x14
+            Lcd_data    #101
+            Lcd_cmd     #0x14
+            Lcd_data    #110
+            Lcd_cmd     #0x14
+            Lcd_data    #99
+            Lcd_cmd     #0x14
+            Lcd_data    #121
+            Lcd_cmd     #0x14
+            Lcd_data    #58
+            Lcd_cmd     #0x14
+            Lcd_cmd     #0x14
+            Lcd_data    #118
+            Lcd_cmd     #0x14
+            Lcd_data    #97
+            Lcd_cmd     #0x14
+            Lcd_data    #108
+            Lcd_cmd     #0x14
+            Lcd_data    #117
+            Lcd_cmd     #0x14
+            Lcd_data    #101
+            Lcd_cmd     #0x14
+            Lcd_cmd     #0xC0
+            ret
+
+
+;----------------------------------------------------------------------------------------------
+;   for PB2 , show the R7 for the FRQ.
+;----------------------------------------------------------------------------------------------
+AsciiLCD     Lcd_data     R13          ; 10,000  count
+             Lcd_cmd      #0x14        ; mov right
+             Lcd_data     R12          ; 1000  count
+             Lcd_cmd      #0x14        ; mov right
+             Lcd_data     R11          ; 100  count
+             Lcd_cmd      #0x14        ; mov right
+             Lcd_data     R10          ; 10  count
+             Lcd_cmd      #0x14        ; mov right
+             Lcd_data     R5           ; 1  count            
+             ret
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            COMMON        INTVEC                  ; Interrupt Vectors
+;-------------------------------------------------------------------------------
+            ORG           RESET_VECTOR            ; POR, ext. Reset
+            END

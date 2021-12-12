@@ -1,0 +1,210 @@
+#include <msp430G2553.h>
+;-------------------------------------------------------------------------------        
+            NAME     RESET
+            PUBLIC   RESET
+            EXTERN   PB0, PB1, PB2, LCD_COUNT, TA_PWM, FRQcount, headline, AsciiLCD
+;-------------------------------------------------------------------------------  
+Debounce     MACRO      cycles
+             LOCAL      L
+             mov.w      cycles,R15     
+L            dec.w      R15                     
+             jnz        L
+             ENDM
+;-------------------------------------------------------------------------------               
+  
+Lcd_data     MACRO       char
+             Debounce    #Pull_3
+             mov.b       #0x00,P1OUT
+             bis.b       #0x40,P2OUT
+             mov.b       char,P1OUT 
+             bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT
+             bic.b       #0x40,P2OUT
+             ENDM
+;-------------------------------------------------------------------------------             
+;-------------------------------------------------------------------------------               
+             
+Lcd_cmd      MACRO       command
+             Debounce    #Pull_3
+             mov.b       command,P1OUT
+             bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT
+             ENDM
+;-------------------------------------------------------------------------------      
+             ORG        0x0200                  ; Begins a RAM segment
+;-------------------------------------------------------------------------------
+state        DW         0
+Pull_1       EQU        280                       ;wait of 0.8msec = (3op*280)/2^20, work for both pull-up and pull-down.
+Pull_2       EQU        5243                      ;wait 15 msec
+Pull_3       EQU        1747                      ;wait of  5msec
+Pull_4       EQU        70                        ; wait of 200 microsec
+
+;-------------------------------------------------------------------------------
+             RSEG       CSTACK                  ; Begins a relocatable segment name of CSTACK - Define stack segment
+;-------------------------------------------------------------------------------
+             RSEG       CODE                    ; Assemble to Flash memory -like void main in C
+;-----------------------------------------------------------------------------
+RESET        mov.w      #SFE(CSTACK),SP          ; Initialize stack pointer
+StopWDT      mov.w      #WDTPW+WDTHOLD,&WDTCTL    
+            
+
+setupRegist  mov        #5,R4                    ;for FSM
+             mov        #48,R5                   ;for PB0 and PB2
+             clr        R6                       ;for PB1
+             clr        R7                       ;for PB2
+             clr        R8
+             clr        R9                       ;for PB0 and PB2
+             mov        #48,R10                  ;for PB0 and PB2
+             mov        #48,R11                  ;for PB0 and PB2
+             mov        #48,R12                  ;for PB2
+             mov        #48,R13                  ;for PB2
+             
+SetupP1      bic.b      #0xff,P1SEL              ; DATA bit for the LCD
+             bis.b      #0xff,P1DIR 
+             bic.b      #0xff,P1OUT
+             
+             
+SetupP2      bic.b      #0xEB,P2SEL             ; 0x11101011
+             bis.b      #0x14,P2SEL             ; p2.2 = TA1
+             bic.b      #0x0B,P2DIR             ; 0x00001011 inpute    p2.4 get the single
+             bis.b      #0xF4,P2DIR             ; 0x11110100 output
+             bis.b      #0x03,P2IES             ; push-up - set to fallig edge
+             bic.b      #0x08,P2IES             ; push-down - set to rising edge
+             bis.b      #0x0F,P2IE              ; may change as we understand what p2.2 do!!!!!!!!
+             bic.b      #0x0F,P2IFG             ; reset of interrupt flag  
+             
+             
+setupLCD     bic.b       #0xE0,P2OUT            ; E = p2.5  RS = p2.6   RW = p2.7
+             Debounce    #Pull_2
+             mov.b       #0x3F,P1OUT
+Lcd_strobe1  bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT
+             Debounce    #Pull_3
+             mov.b       #0x3F,P1OUT
+Lcd_strobe2  bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT             
+             Debounce    #Pull_4
+             mov.b       #0x3F,P1OUT
+Lcd_strobe3  bis.b       #0x20,P2OUT
+             NOP
+             NOP
+             bic.b       #0x20,P2OUT
+             Lcd_cmd     #0x3C 
+             Lcd_cmd     #0x0F 
+             Lcd_cmd     #0x01 
+             Lcd_cmd     #0x06 
+             Lcd_cmd     #0x80 
+             Lcd_cmd     #0x02
+             
+GoToSleep    bis.w      #CPUOFF+GIE,SR
+             nop
+
+;----------- FSM_loop ------------------------------------- 
+state0       cmp         #0,R4                 ;check if state0
+             jnz         state2             
+             call        #PB0            
+          
+
+state2       cmp         #2,R4                 ;check if state2
+             jnz         state3             
+             call        #PB1           
+             
+state3       cmp         #3,R4                 ;check if state3           
+             jnz         GoToSleep
+             call        #PB2
+             
+             jmp         GoToSleep             
+                            
+;------------------------------------------------------------------------------------------ 
+;               PORT2 Interrupt Service Routine 
+;------------------------------------------------------------------------------------------
+PORT2_ISR    Debounce    #Pull_1   
+             bit.b       #0x01,P2IFG              ;check if P2.0 is pushed
+             jnz         P2_0 
+             bit.b       #0x02,P2IFG              ;check if P2.1 is pushed
+             jnz         P2_1
+             bit.b       #0x08,P2IFG              ;check if P2.3 is pushed
+             jnz         P2_3
+             reti                                 ; interrupt hapened from another source
+             
+P2_0         mov         #0,R4               
+             jmp         exitLPM0
+             
+P2_1         mov         #2,R4       
+             jmp         exitLPM0
+                      
+P2_3         mov         #3,R4       
+             
+             
+exitLPM0     bic         #CPUOFF,0(SP)            ; Exit LMP0
+             bic.b       #0x0B,P2IFG  
+             reti
+;------------------------------------------------------------------------------------------ 
+            ;TA0 Interrupt Service Routine
+;----------------------------------------------------------------------------------------------
+TA0_ISR      cmp         #0,R4
+             jnz         PB2san
+             inc         R9                     ; counter one sec
+             cmp         #2,R9
+             jnz         miss
+PB0san       call        #LCD_COUNT
+             
+PB2san       cmp         #3,R4
+             jnz         miss
+             inc         R9                     ; counter one sec
+             cmp         #2,R9
+             jnz         miss
+             clr         R9                     ; count one sec  2x0.5
+             call        #headline              ; the frq headline
+             call        #AsciiLCD
+             mov         #48,R5
+             mov         #48,R10
+             mov         #48,R11                                 
+             mov         #48,R12
+             mov         #48,R13 
+miss         reti
+;------------------------------------------------------------------------------------------ 
+            ;TAx Interrupt Service Routinereti                                  ; Vector 0 - no interrupt
+            ;reti                                  ; Vector 1 - TACCR1
+            ;reti                                  ; Vector 2 - TACCR2
+            ;reti                                  ; Vector 3 - reserv
+            ;reti                                  ; Vector 4 - reserv
+;----------------------------------------------------------------------------------------------
+TAx0_ISR    add.w       &TA0IV,PC                  ; Add Timer_A offset vector
+PB1san      cmp         #2,R4
+            jnz         endi0                      ;if not in PB1
+            call        #TA_PWM               
+endi0       reti
+;----------------------------------------------------------------------------------------------
+TAx1_ISR                      ; Add Timer_A offset vector
+            cmp         #2,R4
+            jnz         PB2FRQ                     ;if not in PB1
+            call        #TA_PWM
+PB2FRQ      cmp         #3,R4
+            jnz         endi1                      ;if not in PB2
+            call        #FRQcount            
+endi1       reti
+;-------------------------------------------------------------------------------------------------------------------------------------------            
+            COMMON        INTVEC                  ; Interrupt Vectors-Begins a common segment with name of INTVEC 
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            ORG           TIMER0_A1_VECTOR          ; Timer_A0X Vector
+            DW            TAx0_ISR 
+            ORG           TIMER1_A1_VECTOR          ; Timer_A1X Vector
+            DW            TAx1_ISR 
+            ORG           TIMER0_A0_VECTOR          ; Timer_A0 Vector
+            DW            TA0_ISR 
+            ORG           PORT2_VECTOR            ;PORT2 Interrupt Vector
+            DW            PORT2_ISR 
+            ORG           RESET_VECTOR            ; MSP430 RESET Vector
+            DW            RESET                   
+            END
+            
+            
