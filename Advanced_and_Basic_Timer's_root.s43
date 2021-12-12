@@ -1,7 +1,7 @@
 #include <msp430G2553.h>
 
 ;------------------------------------------------------------------------------- 
-             MODULE   root5pre
+             MODULE   Advanced_and_Basic_Timer's_root
              PUBLIC   PB0, PB1, PB2, LCD_COUNT, TA_PWM, FRQcount, headline, AsciiLCD
              RSEG     CODE
 ;------------------------------------------------------------------------------- 
