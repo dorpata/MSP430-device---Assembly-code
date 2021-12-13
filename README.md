@@ -2,9 +2,11 @@
 Using Assembly to interface with MSP430 microcontroller. for any project with 'root' file attached - contain the function for the routine.
 
 1. GPIO (General Purpose Input Output) Led, Switch, Push-Button - change the input signal Dutycycle according to the switches position. show on LEDs.
+
 2. Modes Operating, Interrupts - I write a code that expands the Hardware interrupt mechanism and supports prioritization of interrupt according to
    priority level, even when not happening together. This means, in the case of the arrival of a interrupt at a higher priority level, 
-   the CPU will handle the high priority interrupt And then will return to treat the low priority level.   
+   the CPU will handle the high priority interrupt And then will return to treat the low priority level. 
+   
 3. Advanced and Basic Timer's and LCD - I execute command by pressing the buttons PB 0/1/2/3.
    (a) By pressing the PB0 button:
        It is required to perform a count from the value 0x00 and higher on an LCD screen (without displaying the counting history),
