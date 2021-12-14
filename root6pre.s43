@@ -1,0 +1,177 @@
+#include <msp430G2553.h>
+
+;------------------------------------------------------------------------------- 
+             MODULE   root6pre
+             PUBLIC   PB0,PB1, delta_min, delta_max, LCD_value
+             RSEG     CODE
+;------------------------------------------------------------------------------- 
+Pull_3       EQU        1747                       ;wait of  5msec
+;------------------------------------------------------------------------------- 
+
+;----------------------------------------------------------------------------------------------
+ 
+Debounce     MACRO      cycles
+             LOCAL      L
+             mov.w      cycles,R15     
+L            dec.w      R15                     
+             jnz        L
+             ENDM
+;----------------------------------------------------------------------------------------------
+int_float    MACRO      value_R
+             LOCAL      L3
+             LOCAL      L4
+             LOCAL      L5
+             LOCAL      rotate
+             mov        #11,R5
+             mov        #25,R14
+             mov        value_R,R15
+rotate       clrc       
+             rrc        R15
+             dec        R5
+             jnz        rotate
+             mov        R15,R12
+L3           mov        value_R,R15
+             clr        R5
+             and.w      0x07FF,R15
+L4           add        R15,R5
+             dec        R14
+             jnz        L4
+             mov        #9,R15
+L5           clrc       
+             rrc        R5
+             dec        R15
+             jnz        L5
+             mov        R5,R13 
+             clr        R14
+             clr        R15
+             clr        R5
+             ENDM
+;----------------------------------------------------------------------------------------------
+Lcd_cmd      MACRO       command
+             Debounce    #Pull_3
+             mov.b       command,P2OUT
+             bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT
+             ENDM
+;------------------------------------------------------------------------------- 
+Lcd_data     MACRO       char
+             Debounce    #Pull_3
+             mov.b       #0x00,P2OUT
+             bis.b       #0x40,P1OUT
+             mov.b       char,P2OUT 
+             bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT
+             bic.b       #0x40,P1OUT
+             ENDM
+;----------------------------------------------------------------------------------------------
+;            Vmin and Vmax value PB0
+;----------------------------------------------------------------------------------------------
+            
+PB0          bis.w       #ADC10SC+ENC,ADC10CTL0             ; enable interrubt 
+                                                                                               
+             ret
+;------------------------------------------------------------------------------- 
+;            PB1
+;----------------------------------------------------------------------------------------------
+PB1 ret
+;----------------------------------------------------------------------------------------------
+;   for PB0 , set delta.
+;----------------------------------------------------------------------------------------------
+delta_min    push         R6
+L1           add          R9,R10
+             dec          R6
+             jnz          L1
+             pop          R6
+             ret
+             
+delta_max    push         R7
+L2           add          R9,R11
+             dec          R7
+             jnz          L2
+             pop          R7
+             ret
+
+;----------------------------------------------------------------------------------------------
+;   for PB0 , show the value on the LCD.
+;----------------------------------------------------------------------------------------------
+LCD_value    Lcd_cmd      #0x01                       ; clear LCD
+             int_float    R10                         ;int_min in R12 , float_min in R13
+             clr          R10
+             call         #headVmin
+             call         #writh
+             int_float    R11
+             clr          R11
+             Lcd_cmd      #0xC0                       ; go down line
+             call         #headVmax
+             call         #writh
+             ret
+
+             
+
+
+
+;----------------------------------------------------------------------------------------------
+;   for PB0 , Writh
+;----------------------------------------------------------------------------------------------
+writh        add          #48,R12           
+             Lcd_data     R12
+             Lcd_data     #46               ; point
+             mov          #48,R14
+             mov          #48,R5
+             inc          R14
+             dec          R13
+             jn           M                 ;  jmp  if R13 = 0
+             jnz          K                 ;  jmp  if R13 != 0,1
+             jmp          D                 ;  jmp  if R13 = 1
+K            inc          R14
+             dec          R13   
+             jz           D
+             cmp          #58,R14                      
+             jnz          K
+             mov          #48,R14
+             inc          R5
+             cmp          #1,R13
+             jz           D
+             cmp          #58,R5
+             jnz          K             
+M            Lcd_data     #48
+             jmp          end_d
+D            Lcd_data     R5
+             Lcd_data     R14
+end_d        ret
+            
+             
+
+
+
+
+;----------------------------------------------------------------------------------------------
+;   for PB0 , show the headline fo the V.
+;----------------------------------------------------------------------------------------------
+headVmin     Lcd_data    #86 
+             Lcd_data    #109
+             Lcd_data    #105
+             Lcd_data    #110
+             Lcd_cmd     #0x14
+             Lcd_data    #61
+             Lcd_cmd     #0x14
+             ret
+             
+headVmax     Lcd_data    #86 
+             Lcd_data    #109
+             Lcd_data    #97
+             Lcd_data    #120
+             Lcd_cmd     #0x14
+             Lcd_data    #61
+             Lcd_cmd     #0x14
+             ret
+
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            COMMON        INTVEC                  ; Interrupt Vectors
+;-------------------------------------------------------------------------------
+            ORG           RESET_VECTOR            ; POR, ext. Reset
+            END

@@ -1,0 +1,205 @@
+#include <msp430G2553.h>
+;-------------------------------------------------------------------------------        
+            NAME     RESET
+            PUBLIC   RESET
+            EXTERN   PB0,PB1, delta_min, delta_max, LCD_value
+;-------------------------------------------------------------------------------  
+Debounce     MACRO      cycles
+             LOCAL      L
+             mov.w      cycles,R15     
+L            dec.w      R15                     
+             jnz        L
+             ENDM
+;-------------------------------------------------------------------------------               
+  
+Lcd_data     MACRO       char
+             Debounce    #Pull_3
+             mov.b       #0x00,P2OUT
+             bis.b       #0x40,P1OUT
+             mov.b       char,P2OUT 
+             bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT
+             bic.b       #0x40,P1OUT
+             ENDM
+;-------------------------------------------------------------------------------             
+;-------------------------------------------------------------------------------               
+             
+Lcd_cmd      MACRO       command
+             Debounce    #Pull_3
+             mov.b       command,P2OUT
+             bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT
+             ENDM
+;-------------------------------------------------------------------------------      
+             ORG        0x0200                  ; Begins a RAM segment
+;-------------------------------------------------------------------------------
+state        DW         0
+Pull_1       EQU        280                       ;wait of 0.8msec = (3op*280)/2^20, work for both pull-up and pull-down.
+Pull_2       EQU        5243                      ;wait 15 msec
+Pull_3       EQU        1747                      ;wait of  5msec
+Pull_4       EQU        70                        ; wait of 200 microsec
+
+;-------------------------------------------------------------------------------
+             RSEG       CSTACK                  ; Begins a relocatable segment name of CSTACK - Define stack segment
+;-------------------------------------------------------------------------------
+             RSEG       CODE                    ; Assemble to Flash memory -like void main in C
+;-----------------------------------------------------------------------------
+RESET        mov.w      #SFE(CSTACK),SP          ; Initialize stack pointer
+StopWDT      mov.w      #WDTPW+WDTHOLD,&WDTCTL    
+            
+
+setupRegist  mov        #5,R4                    ;for FSM
+             mov        #0xFFFF,R6               ;for PB0  Min itertion
+             clr        R7                       ;for PB0  Max itertion
+             clr        R8                       ;for PB0  Test
+             mov        #7,R9                    ;delta V  Q5.11
+             clr        R10                      ;for PB0 Min value
+             clr        R11                      ;for PB0 Max value
+             clr        R12                      ;for V int 
+             clr        R13                      ;and float
+             mov        #50,R5
+             
+           
+             
+SetupADC10   mov.w      #ADC10DIV_7+INCH_3+SHS_0+ADC10SSEL_3+CONSEQ_2,ADC10CTL1                ; select A3, ACLK timer bit, ACD10 timer, divid 8,
+                                                                                               ; Repeat single channel              
+             mov.w      #MSC+SREF_0+ADC10SHT_3+ADC10IE+ADC10ON,ADC10CTL0                       ; reference Vcc, 64*ADC10CLK, enable interrubt              
+setAE0       bis.b      #BIT3,ADC10AE0
+
+SetupP2      bic.b      #0xff,P2SEL              ; DATA bit for the LCD
+             bis.b      #0xff,P2DIR 
+             bic.b      #0xff,P2OUT
+             
+             
+SetupP1      bic.b      #0xEF,P1SEL             ; 0x11101111 
+             bic.b      #0x0F,P1DIR             ; 0x00001111 inpute for the PB's   
+             bis.b      #0xF0,P1DIR             ; 0x11110000 output for the control bits
+             bis.b      #0x03,P1IES             ; push-up - set to fallig edge 0x00000011
+             bic.b      #0x04,P1IES             ; push-down - set to rising edge 0x00000100
+             bis.b      #0x07,P1IE              ; enable the PB's
+             bic.b      #0x07,P1IFG             ; reset of interrupt flag  
+             
+             
+setupLCD     bic.b       #0xE0,P1OUT            ; E = p1.5  RS = p1.6   RW = p1.7
+             Debounce    #Pull_2
+             mov.b       #0x3F,P1OUT
+Lcd_strobe1  bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT
+             Debounce    #Pull_3
+             mov.b       #0x3F,P2OUT
+Lcd_strobe2  bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT             
+             Debounce    #Pull_4
+             mov.b       #0x3F,P2OUT
+Lcd_strobe3  bis.b       #0x20,P1OUT
+             NOP
+             NOP
+             bic.b       #0x20,P1OUT
+             Lcd_cmd     #0x3C 
+             Lcd_cmd     #0x0F 
+             Lcd_cmd     #0x01 
+             Lcd_cmd     #0x06 
+             Lcd_cmd     #0x80 
+             Lcd_cmd     #0x02
+             
+GoToSleep    bis.w      #CPUOFF+GIE,SR
+             nop
+
+;----------- FSM_loop ------------------------------------- 
+state0       cmp         #0,R4                 ;check if state0
+             jnz         state1             
+             call        #PB0            
+
+
+state1       cmp         #1,R4                 ;check if state1
+             jnz         state2             
+             call        #PB1           
+             
+state2       cmp         #3,R4                 ;check if state2          
+             jnz         GoToSleep
+             
+             jmp         GoToSleep             
+                            
+;------------------------------------------------------------------------------------------ 
+;               PORT1 Interrupt Service Routine 
+;------------------------------------------------------------------------------------------
+PORT1_ISR    Debounce    #Pull_1   
+             bit.b       #0x01,P1IFG              ;check if P1.0 is pushed
+             jnz         P1_0 
+             bit.b       #0x02,P1IFG              ;check if P1.1 is pushed
+             jnz         P1_1
+             bit.b       #0x04,P1IFG              ;check if P1.2 is pushed
+             jnz         P1_2
+             reti                                 ; interrupt hapened from another source
+             
+P1_0         mov         #0,R4               
+             jmp         exitLPM0
+             
+P1_1         mov         #1,R4       
+             jmp         exitLPM0
+                      
+P1_2         mov         #2,R4       
+             
+             
+exitLPM0     bic         #CPUOFF,0(SP)            ; Exit LMP0
+             bic.b       #0x07,P1IFG  
+             reti
+;------------------------------------------------------------------------------------------ 
+;               ADC10 Interrupt Service Routine 
+;------------------------------------------------------------------------------------------
+ADC10_ISR    bic.w       #ADC10IE,ADC10CTL0
+             push        R5
+             cmp         #0,R4
+             jnz         endADC
+             mov         ADC10MEM,R8
+             cmp         R8,R7
+             jc          smaller  
+             mov         R8,R7          ; num of itr for Vmax
+smaller      cmp         R8,R6
+             jnc         bigger
+             mov         R8,R6          ; nun of itr fot Vmin
+bigger       call        #delta_min     ; Vmin value R10
+             call        #delta_max     ; Vmax value R11
+             call        #LCD_value
+             jmp         really_end
+endADC       bic.w       #0x000C,ADC10CTL0
+really_end   bis.w       #ADC10IE,ADC10CTL0
+             Debounce    #Pull_2
+             Debounce    #Pull_2
+             Debounce    #Pull_2
+             Debounce    #Pull_2
+             Debounce    #Pull_2
+             Debounce    #Pull_2
+             Debounce    #Pull_2
+             pop         R5
+             dec         R5
+             jnz         andy
+             clr         R7
+             mov         #50,R5
+andy         reti
+             
+
+
+
+
+
+;-------------------------------------------------------------------------------------------------------------------------------------------            
+            COMMON        INTVEC                  ; Interrupt Vectors-Begins a common segment with name of INTVEC 
+;-------------------------------------------------------------------------------------------------------------------------------------------
+            ORG           PORT1_VECTOR              ;PORT1 Interrupt Vector
+            DW            PORT1_ISR 
+            ORG           ADC10_VECTOR              ;ADC10 Interrupt Vector
+            DW            ADC10_ISR
+            ORG           RESET_VECTOR              ; MSP430 RESET Vector
+            DW            RESET                   
+            END
+            
+            
