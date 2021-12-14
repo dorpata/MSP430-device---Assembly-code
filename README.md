@@ -22,6 +22,6 @@ Using Assembly to interface with MSP430 microcontroller. for any project with 'r
 4. ADC and DAC - the code is FSM based and Interrupts. by receive input of a cyclic signal (A triangular, square signal,
    Sine, etc.) from the signal generator within the Vcc-0v voltage range and at a frequency of up to 1khz.
    By pressing the buttons the code will perform various actions. 
-   For example By pressing PB0 - i print  on LCD screene values 𝑉min ,𝑉max  of the voltage signal sampled from the generator dynamically, these values
-   Will be updated according to the change in the output signal of the generator.
+   For example By pressing PB0 - i print  on LCD screene values 𝑉min ,𝑉max  of the voltage signal, sampled from the generator dynamically.
+   these values will be updated according to the change in the output signal of the generator.
 
