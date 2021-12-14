@@ -1,7 +1,7 @@
 #include <msp430G2553.h>
 
 ;------------------------------------------------------------------------------- 
-             MODULE   root_ADC_and_DAC
+             MODULE   ADC_and_DAC_root
              PUBLIC   PB0,PB1, delta_min, delta_max, LCD_value
              RSEG     CODE
 ;------------------------------------------------------------------------------- 
